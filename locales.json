@@ -82,7 +82,7 @@
         "msg_split_role_keep_one": "At least one channel must stay enabled."
     },
     "ja": {
-        "nav_play": "演奏",
+        "nav_play": "再生",
         "nav_library": "ライブラリ",
         "nav_settings": "設定",
 
@@ -164,7 +164,7 @@
         "msg_split_role_keep_one": "少なくとも1つのチャンネルを有効にしてください。"
     },
     "zh": {
-        "nav_play": "演奏",
+        "nav_play": "播放",
         "nav_library": "曲库",
         "nav_settings": "设置",
 

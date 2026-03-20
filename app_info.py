@@ -1,2 +1,2 @@
 APP_NAME = "StarResonanceMidi"
-APP_VERSION = "v0.1.0-release"
+APP_VERSION = "v0.2.0-release"
