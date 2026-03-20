@@ -28,12 +28,12 @@
 ## 环境要求
 
 - Python 3.12+
-- 依赖包：`flet`、`mido`、`pynput`
+- 依赖包：`flet`, `mido`, `pynput`, `music21`
 
 安装示例：
 
 ```bash
-python -m pip install flet mido pynput
+python -m pip install flet mido pynput music21
 ```
 
 ## 运行方式

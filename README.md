@@ -29,12 +29,12 @@ Primary use case: map MIDI files to keyboard input for in-game performance in St
 ## Requirements
 
 - Python 3.12+
-- Packages used by this project: `flet`, `mido`, `pynput`
+- Packages used by this project: `flet`, `mido`, `pynput`, `music21`
 
 Example installation:
 
 ```bash
-python -m pip install flet mido pynput
+python -m pip install flet mido pynput music21
 ```
 
 ## Run
