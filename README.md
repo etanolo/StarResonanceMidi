@@ -1,7 +1,7 @@
 # StarResonanceMidi
 
 
-StarResonanceMidi is a MIDI-to-keyboard playback tool with a Flet GUI, playlist sequencing, localized UI text, and timing controls.
+StarResonanceMidi is a MIDI-to-keyboard playback tool with a Flet GUI and playlist sequencing.
 
 Primary use case: map MIDI files to keyboard input for in-game performance in Star Resonance.
 
@@ -44,6 +44,11 @@ From project root:
 ```bash
 python main.py
 ```
+
+
+## Packaging
+
+Windows installer builds are produced with PyAppify via GitHub Actions.
 
 
 ## Translation Contributions

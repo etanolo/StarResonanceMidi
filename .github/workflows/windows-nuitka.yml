@@ -1,7 +1,4 @@
-name: Build Windows (Nuitka)
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+name: Build Windows (PyAppify)
 
 on:
   workflow_dispatch:
@@ -17,64 +14,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
+      - name: Build with PyAppify
+        id: build-app
+        uses: ok-oldking/pyappify-action@master
         with:
-          python-version: "3.11"
+          version: "v1.0.42"
 
-      - name: Install dependencies
-        shell: pwsh
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-          python -m pip install -r requirements-build.txt
-
-      - name: Prepare icon (optional)
-        shell: pwsh
-        run: |
-          if (!(Test-Path "assets")) { New-Item -ItemType Directory -Path "assets" | Out-Null }
-          if (!(Test-Path "assets/icon.ico") -and (Test-Path "assets/icon.png")) {
-            python -c "from PIL import Image; im=Image.open('assets/icon.png').convert('RGBA'); im.save('assets/icon.ico', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)]); print('icon converted')"
-          }
-
-      - name: Build onefile
-        shell: pwsh
-        run: |
-          $iconArg = ""
-          if (Test-Path "assets/icon.ico") { $iconArg = "--windows-icon-from-ico=assets/icon.ico" }
-          python -m nuitka `
-            --onefile `
-            --onefile-no-compression `
-            --follow-imports `
-            --assume-yes-for-downloads `
-            --enable-plugin=tk-inter `
-            --include-package=flet `
-            --include-package=mido `
-            --include-package=pynput `
-            --include-data-file=locales.json=locales.json `
-            --windows-uac-admin `
-            --windows-console-mode=disable `
-            --windows-product-name="StarResonanceMidi" `
-            --windows-file-description="StarResonanceMidi MIDI-to-keyboard player" `
-            --product-version="1.0.0.0" `
-            --file-version="1.0.0.0" `
-            $iconArg `
-            --output-filename=StarResonanceMidi.exe `
-            --output-dir=build/onefile `
-            main.py
-
-      - name: Generate SHA256
-        shell: pwsh
-        run: |
-          Get-FileHash "build/onefile/StarResonanceMidi.exe" -Algorithm SHA256 |
-            ForEach-Object { "$($_.Hash)  StarResonanceMidi.exe" } |
-            Set-Content "build/onefile/StarResonanceMidi.exe.sha256"
-
-      - name: Upload onefile artifact
+      - name: Upload PyAppify artifact
         uses: actions/upload-artifact@v5
         with:
-          name: StarResonanceMidi-windows-onefile
+          name: StarResonanceMidi-pyappify
           retention-days: 14
-          path: |
-            build/onefile/StarResonanceMidi.exe
-            build/onefile/StarResonanceMidi.exe.sha256
+          path: pyappify_dist/*

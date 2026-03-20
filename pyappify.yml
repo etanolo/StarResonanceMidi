@@ -1,0 +1,8 @@
+name: "StarResonanceMidi"
+uac: true
+profiles:
+  - name: "release"
+    git_url: "https://github.com/etanolo/StarResonanceMidi.git"
+    main_script: "main.py"
+    requires_python: "3.11"
+    requirements: "requirements.txt"

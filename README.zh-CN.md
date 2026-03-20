@@ -1,7 +1,7 @@
 # StarResonanceMidi
 
 
-这是一个将 MIDI 映射为键盘输入的 Flet 图形工具，支持播放列表顺序播放、曲间过渡缓冲、多语言文案与参数调节。
+这是一个将 MIDI 映射为键盘输入的 Flet 图形工具，支持播放列表顺序播放。
 
 主要用途：将 MIDI 文件映射到键盘，用于「星痕共鸣 / Blue Protocol: Star Resonance / ブループロトコル：スターレゾナンス」内演奏。
 
@@ -18,7 +18,7 @@
 
 ## 歌曲/MIDI 版权与商标版权声明
 
-- 本软件为独立的非官方工具，与游戏发行方或权利方无隶属、无背书关系。
+- 本软件为独立的非官方工具，与游戏发行方或权利方无隶属或背书关系。
 - 你需要自行确保所使用歌曲与 MIDI 文件的合法性。
 - 未经授权，请勿上传、传播或公开演奏受版权保护的歌曲/MIDI。
 - 游戏商标/名称「蓝色协议 / Blue Protocol」归属于 **BANDAI NAMCO**。
@@ -43,6 +43,11 @@ python -m pip install flet mido pynput
 ```bash
 python main.py
 ```
+
+
+## 打包说明
+
+Windows 安装包由 PyAppify + GitHub Actions 生成。
 
 
 ## 翻译贡献说明

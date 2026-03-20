@@ -1,0 +1,42 @@
+name: Build Windows (PyAppify)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Prepare icons for PyAppify
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pillow
+          if (!(Test-Path "icons")) { New-Item -ItemType Directory -Path "icons" | Out-Null }
+          Copy-Item "assets/icon.png" "icons/icon.png" -Force
+          python -c "from PIL import Image; im=Image.open('assets/icon.png').convert('RGBA'); im.save('icons/icon.ico', sizes=[(256,256),(128,128),(64,64),(48,48),(32,32),(16,16)]); print('icons prepared')"
+
+      - name: Build with PyAppify
+        id: build-app
+        uses: ok-oldking/pyappify-action@master
+        with:
+          version: "v1.0.42"
+
+      - name: Upload offline installer artifact
+        uses: actions/upload-artifact@v5
+        with:
+          name: StarResonanceMidi-offline-installer
+          retention-days: 14
+          path: pyappify_dist/*-release-setup.exe
