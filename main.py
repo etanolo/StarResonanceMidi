@@ -8,7 +8,7 @@ import flet as ft
 from pynput.keyboard import Key as PynputKey
 from pynput.keyboard import Listener as KeyboardListener
 
-from core import MidiEngine
+from core import MidiEngine, MidiRoleAnalysis, MidiRoleAnalyzer, TrackSplitPlan
 from gui import HarmonyGui, StatusLevel
 
 
@@ -31,11 +31,13 @@ class AppController:
         self.current_track_index: int = -1
         self.playlist_paths: list[str] = []
         self.playback_mode: str = "normal"
+        self.smart_split_enabled: bool = False
         self.transition_gap_seconds = self.DEFAULT_TRANSITION_GAP_SECONDS
 
         self.play_thread: threading.Thread | None = None
         self.is_playing = False
         self.stop_requested = threading.Event()
+        self.role_analysis_cache: dict[str, MidiRoleAnalysis] = {}
         self._status_token = 0
         self._pending_progress: tuple[float, float] | None = None
         self._progress_pump_running = False
@@ -60,7 +62,9 @@ class AppController:
         self.gui.on_prev_click = self._handle_prev_click
         self.gui.on_next_click = self._handle_next_click
         self.gui.on_play_mode_change = self._handle_play_mode_change
+        self.gui.on_split_toggle = self._handle_split_toggle
         self.gui.set_play_mode(self.playback_mode)
+        self.gui.set_smart_split_enabled(self.smart_split_enabled)
 
     def _bind_engine_callbacks(self) -> None:
         """Bind engine callbacks to UI-safe handlers."""
@@ -173,6 +177,16 @@ class AppController:
         self.playback_mode = mode
         self._refresh_track_navigation_state()
 
+    def _handle_split_toggle(self, enabled: bool) -> None:
+        """Enable or disable smart split master switch."""
+        self.smart_split_enabled = bool(enabled)
+        self.gui.set_smart_split_enabled(self.smart_split_enabled)
+        if self.smart_split_enabled:
+            self._show_message(self._tr("msg_smart_split_enabled"), "info")
+            self.page.run_task(self._analyze_current_track)
+        else:
+            self._show_message(self._tr("msg_smart_split_disabled"), "warning")
+
     def _handle_prev_click(self, _: Any) -> None:
         """Select previous track in normal (non-loop) mode."""
         self._navigate_track(-1)
@@ -258,6 +272,7 @@ class AppController:
         subtitle = self._tr("msg_playlist_count", len(self.playlist_paths))
         self.gui.set_track_info(f"[{self.current_track_index + 1}/{len(self.playlist_paths)}] {first_name}", subtitle)
         self._refresh_track_navigation_state()
+        self.page.run_task(self._analyze_current_track)
 
     def _handle_library_play_click(self, track_path: str) -> None:
         """Select a track from library and jump to play view."""
@@ -294,8 +309,10 @@ class AppController:
                 self._run_on_ui(self.gui.set_library_tracks, self.playlist_paths, self.current_midi_path)
                 self._run_on_ui(self._refresh_track_navigation_state)
 
+                split_plan = self._build_split_plan_for_path(midi_path)
+
                 try:
-                    self.engine.play(midi_path)
+                    self.engine.play(midi_path, split_plan=split_plan)
                 except Exception as exc:
                     self._run_on_ui(self._show_message, self._tr("msg_engine_error", str(exc)), "error")
                     had_error = True
@@ -391,6 +408,56 @@ class AppController:
         self.gui.set_time_labels(0.0, 0.0)
         self._refresh_track_navigation_state()
         self._show_message(self._tr("msg_imported_count", len(appended)))
+        self.page.run_task(self._analyze_current_track)
+
+    async def _analyze_current_track(self) -> None:
+        """Analyze selected MIDI structure and surface split-readiness status."""
+        midi_path = self.current_midi_path
+        if not midi_path:
+            return
+
+        try:
+            normalized = str(Path(midi_path).expanduser().resolve(strict=False))
+            analysis = self.role_analysis_cache.get(normalized)
+            if analysis is None:
+                analysis = await asyncio.to_thread(MidiRoleAnalyzer.analyze_file, normalized)
+                self.role_analysis_cache[normalized] = analysis
+        except Exception as exc:
+            self._show_message(self._tr("msg_engine_error", str(exc)), "error")
+            return
+
+        if not self.smart_split_enabled:
+            return
+
+        if analysis.structured:
+            self._show_message(self._tr("msg_track_split_ready", analysis.confidence), "info")
+        else:
+            reason_text = self._tr(f"msg_track_split_reason_{analysis.reason}")
+            self._show_message(self._tr("msg_track_split_disabled", reason_text), "warning")
+
+    def _build_split_plan_for_path(self, midi_path: str) -> TrackSplitPlan:
+        """Build runtime split plan from cached analysis and master toggle."""
+        if not self.smart_split_enabled:
+            return TrackSplitPlan(enabled=False, structured=False, allowed_roles=("keyboard", "bass", "guitar", "drum"), channel_role_map=tuple())
+
+        normalized = str(Path(midi_path).expanduser().resolve(strict=False))
+        analysis = self.role_analysis_cache.get(normalized)
+        if analysis is None:
+            try:
+                analysis = MidiRoleAnalyzer.analyze_file(normalized)
+                self.role_analysis_cache[normalized] = analysis
+            except Exception:
+                return TrackSplitPlan(enabled=False, structured=False, allowed_roles=("keyboard", "bass", "guitar", "drum"), channel_role_map=tuple())
+
+        if not analysis.structured:
+            return TrackSplitPlan(enabled=False, structured=False, allowed_roles=("keyboard", "bass", "guitar", "drum"), channel_role_map=analysis.channel_role_map)
+
+        return TrackSplitPlan(
+            enabled=True,
+            structured=True,
+            allowed_roles=("keyboard", "bass", "guitar", "drum"),
+            channel_role_map=analysis.channel_role_map,
+        )
 
     @staticmethod
     def _normalize_path_key(path: str) -> str:

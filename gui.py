@@ -5,6 +5,8 @@ from typing import Any, Callable, Literal, cast
 
 import flet as ft
 
+from app_info import APP_NAME, APP_VERSION
+
 FALLBACK_LOCALES: dict[str, dict[str, str]] = {"en": {}, "ja": {}, "zh": {}}
 
 
@@ -30,6 +32,7 @@ UiEventHandler = Callable[[Any], None]
 ValueChangeHandler = Callable[[float], None]
 TrackSelectHandler = Callable[[str], None]
 ModeChangeHandler = Callable[[str], None]
+BoolChangeHandler = Callable[[bool], None]
 StatusLevel = Literal["info", "warning", "error"]
 STATUS_COLOR_MAP: dict[StatusLevel, str] = {
     "info": ft.Colors.GREY_700,
@@ -50,7 +53,7 @@ class HarmonyGui:
     def __init__(self, page: ft.Page):
         """Initialize page setup, hooks, and view tree."""
         self.page = page
-        self.page.title = "StarResonanceMidi"
+        self.page.title = APP_NAME
         self.page.theme_mode = ft.ThemeMode.LIGHT
         
         self.page.window.width = 1000
@@ -72,6 +75,7 @@ class HarmonyGui:
         self.on_prev_click: UiEventHandler | None = None
         self.on_next_click: UiEventHandler | None = None
         self.on_play_mode_change: ModeChangeHandler | None = None
+        self.on_split_toggle: BoolChangeHandler | None = None
 
         # Internal control refs used by update APIs.
         self.btn_play: ft.FloatingActionButton | None = None
@@ -81,6 +85,7 @@ class HarmonyGui:
         self.btn_mode_repeat_one: ft.Button | None = None
         self.btn_mode_repeat_all: ft.Button | None = None
         self.current_play_mode: str = "normal"
+        self.smart_split_enabled: bool = False
         self.progress_bar: ft.ProgressBar | None = None
         self.lbl_time_current: ft.Text | None = None
         self.lbl_time_total: ft.Text | None = None
@@ -144,6 +149,10 @@ class HarmonyGui:
         allowed = {"normal", "repeat_one", "repeat_all"}
         self.current_play_mode = mode if mode in allowed else "normal"
         self._refresh_play_mode_buttons()
+
+    def set_smart_split_enabled(self, enabled: bool) -> None:
+        """Sync smart-split master toggle state from controller."""
+        self.smart_split_enabled = bool(enabled)
 
     def _refresh_play_mode_buttons(self) -> None:
         """Highlight selected mode button and reset others."""
@@ -586,8 +595,13 @@ class HarmonyGui:
                     )
                 ),
                 ft.Switch(label=self.t("set_dark"), value=self.page.theme_mode == ft.ThemeMode.DARK, on_change=self.toggle_theme),
+                ft.Switch(
+                    label=self.t("set_smart_split"),
+                    value=self.smart_split_enabled,
+                    on_change=lambda e: self.on_split_toggle(bool(e.control.value)) if self.on_split_toggle and e.control.value is not None else None,
+                ),
                 ft.Button(self.t("set_hotkey"), icon=ft.Icons.KEYBOARD),
-                ft.Text(self.t("set_version"), size=12, color=ft.Colors.GREY_500),
+                ft.Text(self.t("set_version", APP_VERSION), size=12, color=ft.Colors.GREY_500),
                 ft.Text(self.t("set_project_meta"), size=12, color=ft.Colors.GREY_500)
             ], expand=True, spacing=15
         )

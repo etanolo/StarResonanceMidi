@@ -2,8 +2,9 @@ import mido
 import random
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Literal
 
 from pynput.keyboard import Controller, Key
 
@@ -19,6 +20,224 @@ ProgressCallback = Callable[[float, float], None]
 TrackInfoCallback = Callable[[str, str], None]
 ErrorCallback = Callable[[str], None]
 FinishCallback = Callable[[], None]
+
+TrackRole = Literal["keyboard", "bass", "guitar", "drum"]
+
+
+@dataclass(frozen=True)
+class TrackRoleDecision:
+    """Single-track role decision with confidence diagnostics."""
+
+    track_index: int
+    track_name: str
+    role: TrackRole
+    confidence: float
+    margin: float
+    conflict_ratio: float
+    dominant_channel: int | None
+    dominant_channel_ratio: float
+
+
+@dataclass(frozen=True)
+class MidiRoleAnalysis:
+    """Whole-file role analysis summary."""
+
+    midi_path: str
+    structured: bool
+    confidence: float
+    reason: Literal["ok", "no_tracks", "low_confidence", "ambiguous", "high_conflict"]
+    decisions: tuple[TrackRoleDecision, ...]
+    channel_role_map: tuple[tuple[int, TrackRole], ...]
+
+
+@dataclass(frozen=True)
+class TrackSplitPlan:
+    """Runtime split plan passed from controller to engine."""
+
+    enabled: bool
+    structured: bool
+    allowed_roles: tuple[TrackRole, ...]
+    channel_role_map: tuple[tuple[int, TrackRole], ...]
+
+
+class MidiRoleAnalyzer:
+    """Rule-based MIDI track role analyzer with safety gating."""
+
+    MIN_CONFIDENCE = 0.60
+    MIN_MARGIN = 0.15
+    MAX_CONFLICT_RATIO = 0.45
+
+    DRUM_KEYWORDS = {"drum", "perc", "percussion", "kick", "snare", "hihat", "tom", "cymbal"}
+    BASS_KEYWORDS = {"bass", "contra", "upright", "sub"}
+    GUITAR_KEYWORDS = {"guitar", "gt", "lead", "rhythm", "acoustic", "electric"}
+    KEYBOARD_KEYWORDS = {"piano", "keys", "keyboard", "organ", "synth", "ep", "clav"}
+
+    @classmethod
+    def analyze_file(cls, midi_path: str) -> MidiRoleAnalysis:
+        """Analyze MIDI tracks and decide whether split is reliable enough."""
+        midi = mido.MidiFile(midi_path)
+        decisions: list[TrackRoleDecision] = []
+
+        for idx, track in enumerate(midi.tracks):
+            decision = cls._analyze_track(idx, track)
+            if decision is not None:
+                decisions.append(decision)
+
+        if not decisions:
+            return MidiRoleAnalysis(
+                midi_path=midi_path,
+                structured=False,
+                confidence=0.0,
+                reason="no_tracks",
+                decisions=tuple(),
+                channel_role_map=tuple(),
+            )
+
+        channel_role_scores: dict[int, dict[TrackRole, float]] = {}
+        for decision in decisions:
+            if decision.dominant_channel is None:
+                continue
+            per_channel = channel_role_scores.setdefault(decision.dominant_channel, {})
+            weight = decision.confidence * max(0.0, min(1.0, decision.dominant_channel_ratio))
+            per_channel[decision.role] = per_channel.get(decision.role, 0.0) + weight
+
+        channel_role_map: list[tuple[int, TrackRole]] = []
+        for channel, role_scores in channel_role_scores.items():
+            best_role = max(role_scores.items(), key=lambda item: item[1])[0]
+            channel_role_map.append((channel, best_role))
+
+        overall_conf = sum(d.confidence for d in decisions) / len(decisions)
+        min_margin = min(d.margin for d in decisions)
+        max_conflict = max(d.conflict_ratio for d in decisions)
+
+        if overall_conf < cls.MIN_CONFIDENCE:
+            reason: Literal["ok", "no_tracks", "low_confidence", "ambiguous", "high_conflict"] = "low_confidence"
+            structured = False
+        elif min_margin < cls.MIN_MARGIN:
+            reason = "ambiguous"
+            structured = False
+        elif max_conflict > cls.MAX_CONFLICT_RATIO:
+            reason = "high_conflict"
+            structured = False
+        else:
+            reason = "ok"
+            structured = True
+
+        return MidiRoleAnalysis(
+            midi_path=midi_path,
+            structured=structured,
+            confidence=max(0.0, min(1.0, overall_conf)),
+            reason=reason,
+            decisions=tuple(decisions),
+            channel_role_map=tuple(sorted(channel_role_map, key=lambda item: item[0])),
+        )
+
+    @classmethod
+    def _analyze_track(cls, track_index: int, track: mido.MidiTrack) -> TrackRoleDecision | None:
+        """Score one MIDI track and produce a role decision."""
+        scores: dict[TrackRole, float] = {
+            "keyboard": 0.15,
+            "bass": 0.0,
+            "guitar": 0.0,
+            "drum": 0.0,
+        }
+
+        track_name = ""
+        note_events = 0
+        channel_hist: dict[int, int] = {}
+        program_hist: dict[int, int] = {}
+
+        for msg in track:
+            if getattr(msg, "is_meta", False) and getattr(msg, "type", "") == "track_name":
+                track_name = str(getattr(msg, "name", "") or "")
+                continue
+
+            msg_type = getattr(msg, "type", "")
+            if msg_type == "program_change":
+                program = int(getattr(msg, "program", 0) or 0)
+                channel = int(getattr(msg, "channel", 0) or 0)
+                program_hist[program] = program_hist.get(program, 0) + 1
+                channel_hist[channel] = channel_hist.get(channel, 0) + 1
+            elif msg_type == "note_on" and int(getattr(msg, "velocity", 0) or 0) > 0:
+                note_events += 1
+                channel = int(getattr(msg, "channel", 0) or 0)
+                channel_hist[channel] = channel_hist.get(channel, 0) + 1
+
+        if note_events == 0 and not program_hist and not track_name.strip():
+            return None
+
+        # Channel-based drum hint (GM channel 10 -> index 9).
+        total_channel_events = sum(channel_hist.values())
+        drum_ratio = (channel_hist.get(9, 0) / total_channel_events) if total_channel_events > 0 else 0.0
+        scores["drum"] += 0.85 * drum_ratio
+
+        dominant_channel: int | None = None
+        dominant_channel_ratio = 0.0
+        if total_channel_events > 0:
+            dominant_channel, dominant_events = max(channel_hist.items(), key=lambda item: item[1])
+            dominant_channel_ratio = dominant_events / total_channel_events
+
+        # Program-range hints.
+        total_program_events = sum(program_hist.values())
+        if total_program_events > 0:
+            bass_hits = sum(v for p, v in program_hist.items() if 32 <= p <= 39)
+            guitar_hits = sum(v for p, v in program_hist.items() if 24 <= p <= 31)
+            keyboard_hits = sum(v for p, v in program_hist.items() if 0 <= p <= 7)
+
+            scores["bass"] += 0.80 * (bass_hits / total_program_events)
+            scores["guitar"] += 0.80 * (guitar_hits / total_program_events)
+            scores["keyboard"] += 0.65 * (keyboard_hits / total_program_events)
+
+        # Track-name keyword hints.
+        name_tokens = cls._tokenize(track_name)
+        if name_tokens & cls.DRUM_KEYWORDS:
+            scores["drum"] += 0.35
+        if name_tokens & cls.BASS_KEYWORDS:
+            scores["bass"] += 0.35
+        if name_tokens & cls.GUITAR_KEYWORDS:
+            scores["guitar"] += 0.35
+        if name_tokens & cls.KEYBOARD_KEYWORDS:
+            scores["keyboard"] += 0.30
+
+        ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+        best_role, best_score = ranked[0]
+        second_score = ranked[1][1] if len(ranked) > 1 else 0.0
+        margin = max(0.0, best_score - second_score)
+
+        # Track-level conflict ratio from program dispersion across role ranges.
+        role_buckets = {
+            "bass": sum(v for p, v in program_hist.items() if 32 <= p <= 39),
+            "guitar": sum(v for p, v in program_hist.items() if 24 <= p <= 31),
+            "keyboard": sum(v for p, v in program_hist.items() if 0 <= p <= 7),
+            "drum": channel_hist.get(9, 0),
+        }
+        bucket_values = sorted(role_buckets.values(), reverse=True)
+        bucket_total = sum(role_buckets.values())
+        if bucket_total <= 0:
+            conflict_ratio = 0.0
+        else:
+            dominant = bucket_values[0]
+            conflict_ratio = 1.0 - (dominant / bucket_total)
+
+        confidence = max(0.0, min(1.0, best_score))
+        normalized_name = track_name.strip() or f"Track {track_index + 1}"
+
+        return TrackRoleDecision(
+            track_index=track_index,
+            track_name=normalized_name,
+            role=best_role,
+            confidence=confidence,
+            margin=margin,
+            conflict_ratio=conflict_ratio,
+            dominant_channel=dominant_channel,
+            dominant_channel_ratio=dominant_channel_ratio,
+        )
+
+    @staticmethod
+    def _tokenize(name: str) -> set[str]:
+        """Tokenize track name for lightweight keyword matching."""
+        normalized = "".join(ch.lower() if ch.isalnum() else " " for ch in name)
+        return {token for token in normalized.split() if token}
 
 
 class MidiEngine:
@@ -198,7 +417,7 @@ class MidiEngine:
             self.keyboard.release(key)
 
     # ----- Playback lifecycle -----
-    def play(self, midi_path: str) -> None:
+    def play(self, midi_path: str, split_plan: TrackSplitPlan | None = None) -> None:
         """Blocking playback loop intended to run in a worker thread."""
         self._stop_event.clear()
         self._safe_emit(self.on_play_state_change, True)
@@ -234,6 +453,10 @@ class MidiEngine:
                 if self._stop_event.is_set():
                     break
 
+                if split_plan and split_plan.enabled and split_plan.structured:
+                    if self._should_skip_message_by_role(msg, split_plan):
+                        continue
+
                 # mido.MidiFile.play() already handles base timing sleeps.
                 msg_time = float(getattr(msg, "time", 0.0) or 0.0)
                 extra_delay = 0.0
@@ -264,3 +487,37 @@ class MidiEngine:
     def stop(self) -> None:
         """Request stop for the running playback loop."""
         self._stop_event.set()
+
+    @staticmethod
+    def _resolve_message_role(msg: mido.Message, split_plan: TrackSplitPlan) -> TrackRole:
+        """Resolve a message role by channel hints and safe fallback rules."""
+        channel = int(getattr(msg, "channel", -1) or -1)
+        if channel == 9:
+            return "drum"
+
+        channel_role_map = dict(split_plan.channel_role_map)
+        mapped = channel_role_map.get(channel)
+        if mapped in {"keyboard", "bass", "guitar", "drum"}:
+            return mapped
+
+        program = int(getattr(msg, "program", -1) or -1)
+        if 32 <= program <= 39:
+            return "bass"
+        if 24 <= program <= 31:
+            return "guitar"
+        if 0 <= program <= 7:
+            return "keyboard"
+        return "keyboard"
+
+    def _should_skip_message_by_role(self, msg: mido.Message, split_plan: TrackSplitPlan) -> bool:
+        """Return True when note events should be suppressed by active role filter."""
+        msg_type = getattr(msg, "type", "")
+        if msg_type != "note_on":
+            return False
+
+        velocity = int(getattr(msg, "velocity", 0) or 0)
+        if velocity <= 0:
+            return False
+
+        role = self._resolve_message_role(msg, split_plan)
+        return role not in set(split_plan.allowed_roles)

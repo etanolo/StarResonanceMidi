@@ -28,8 +28,9 @@
         "set_lang": "Interface Language",
         "set_lang_sub": "Change the display language",
         "set_dark": "Dark Mode",
+        "set_smart_split": "Enable smart track split",
         "set_hotkey": "Emergency Stop Hotkey: ESC",
-        "set_version": "Version: StarResonanceMidi v0.0.2-Beta",
+        "set_version": "Version: StarResonanceMidi {}",
         "set_project_meta": "GitHub: https://github.com/etanolo/StarResonanceMidi | License: AGPL-3.0 | Based on Flet",
 
         "msg_stopping_playlist": "Stopping playlist...",
@@ -45,7 +46,16 @@
         "msg_read_path_failed": "Cannot read selected file path",
         "msg_playlist_count": "{} tracks total",
         "msg_imported_count": "Imported {} MIDI files",
-        "msg_engine_error": "Engine error: {}"
+        "msg_engine_error": "Engine error: {}",
+        "msg_track_split_ready": "Track split analysis ready (confidence: {:.0%}).",
+        "msg_track_split_disabled": "Track split disabled for this MIDI: {}",
+        "msg_track_split_reason_ok": "structured",
+        "msg_track_split_reason_no_tracks": "no valid playable tracks detected",
+        "msg_track_split_reason_low_confidence": "low confidence",
+        "msg_track_split_reason_ambiguous": "ambiguous role scores",
+        "msg_track_split_reason_high_conflict": "high multi-instrument conflict",
+        "msg_smart_split_enabled": "Smart track split enabled.",
+        "msg_smart_split_disabled": "Smart track split disabled."
     },
     "ja": {
         "nav_play": "演奏",
@@ -76,8 +86,9 @@
         "set_lang": "表示言語",
         "set_lang_sub": "Change the display language",
         "set_dark": "ダークモード",
+        "set_smart_split": "スマート分離を有効化",
         "set_hotkey": "緊急停止ホットキー：ESC",
-        "set_version": "バージョン情報: StarResonanceMidi v0.0.2-Beta",
+        "set_version": "バージョン情報: StarResonanceMidi {}",
         "set_project_meta": "GitHub: https://github.com/etanolo/StarResonanceMidi | ライセンス: AGPL-3.0 | Flet ベース",
 
         "msg_stopping_playlist": "プレイリストを停止しています...",
@@ -93,7 +104,16 @@
         "msg_read_path_failed": "選択したファイルのパスを読み取れません",
         "msg_playlist_count": "全{}曲",
         "msg_imported_count": "{}曲のMIDIを読み込みました",
-        "msg_engine_error": "エンジンエラー: {}"
+        "msg_engine_error": "エンジンエラー: {}",
+        "msg_track_split_ready": "トラック分離解析の準備完了（信頼度: {:.0%}）。",
+        "msg_track_split_disabled": "このMIDIではトラック分離を無効化しました: {}",
+        "msg_track_split_reason_ok": "構造は良好です",
+        "msg_track_split_reason_no_tracks": "再生可能な有効トラックが見つかりません",
+        "msg_track_split_reason_low_confidence": "信頼度が低すぎます",
+        "msg_track_split_reason_ambiguous": "判定スコアが曖昧です",
+        "msg_track_split_reason_high_conflict": "複数楽器の衝突が大きすぎます",
+        "msg_smart_split_enabled": "スマート分離を有効にしました。",
+        "msg_smart_split_disabled": "スマート分離を無効にしました。"
     },
     "zh": {
         "nav_play": "演奏",
@@ -124,8 +144,9 @@
         "set_lang": "界面语言",
         "set_lang_sub": "Change the display language",
         "set_dark": "深色模式",
+        "set_smart_split": "启用智能分轨",
         "set_hotkey": "紧急停止热键：ESC",
-        "set_version": "版本信息: StarResonanceMidi v0.0.2-Beta",
+        "set_version": "版本信息: StarResonanceMidi {}",
         "set_project_meta": "GitHub: https://github.com/etanolo/StarResonanceMidi | 协议: AGPL-3.0 | 基于 Flet",
 
         "msg_stopping_playlist": "正在停止播放列表...",
@@ -141,6 +162,15 @@
         "msg_read_path_failed": "无法读取所选文件路径",
         "msg_playlist_count": "共 {} 首",
         "msg_imported_count": "已导入 {} 首 MIDI",
-        "msg_engine_error": "引擎错误：{}"
+        "msg_engine_error": "引擎错误：{}",
+        "msg_track_split_ready": "分轨分析就绪（置信度：{:.0%}）。",
+        "msg_track_split_disabled": "该 MIDI 已禁用分轨：{}",
+        "msg_track_split_reason_ok": "结构良好",
+        "msg_track_split_reason_no_tracks": "未检测到可播放的有效音轨",
+        "msg_track_split_reason_low_confidence": "置信度过低",
+        "msg_track_split_reason_ambiguous": "分类分数过于接近",
+        "msg_track_split_reason_high_conflict": "多乐器冲突过高",
+        "msg_smart_split_enabled": "已启用智能分轨。",
+        "msg_smart_split_disabled": "已关闭智能分轨。"
     }
 }
