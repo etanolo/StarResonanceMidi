@@ -54,7 +54,7 @@ class SplitAnalyzer:
         self.classifier = InstrumentClassifier()
 
     def analyze_file(self, midi_path: str, max_targets: int | None = None) -> SplitAnalysisResult:
-        midi = mido.MidiFile(midi_path)
+        midi = mido.MidiFile(midi_path, clip=True)
         channel_features = self._collect_channel_features(midi)
         decisions = tuple(self._classify_channel(feature) for feature in channel_features)
         feature_map = {feature.channel_1_based: feature for feature in channel_features}
@@ -83,8 +83,10 @@ class SplitAnalyzer:
                     continue
                 if getattr(msg, "type", "") != "note_on":
                     if getattr(msg, "type", "") == "program_change":
-                        channel = int(getattr(msg, "channel", -1) or -1)
-                        program = int(getattr(msg, "program", -1) or -1)
+                        raw_ch = getattr(msg, "channel", None)
+                        channel = int(raw_ch) if raw_ch is not None else -1
+                        raw_pg = getattr(msg, "program", None)
+                        program = int(raw_pg) if raw_pg is not None else -1
                         if channel >= 0 and program >= 0:
                             track_channels.add(channel)
                             program_hist = channel_programs.setdefault(channel, {})
@@ -92,8 +94,10 @@ class SplitAnalyzer:
                     continue
                 if int(getattr(msg, "velocity", 0) or 0) <= 0:
                     continue
-                channel = int(getattr(msg, "channel", -1) or -1)
-                note = int(getattr(msg, "note", -1) or -1)
+                raw_ch = getattr(msg, "channel", None)
+                channel = int(raw_ch) if raw_ch is not None else -1
+                raw_note = getattr(msg, "note", None)
+                note = int(raw_note) if raw_note is not None else -1
                 if channel < 0 or note < 0:
                     continue
                 track_channels.add(channel)
