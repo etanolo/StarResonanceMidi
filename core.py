@@ -166,13 +166,16 @@ class MidiRoleAnalyzer:
 
             msg_type = getattr(msg, "type", "")
             if msg_type == "program_change":
-                program = int(getattr(msg, "program", 0) or 0)
-                channel = int(getattr(msg, "channel", 0) or 0)
+                raw_pg = getattr(msg, "program", None)
+                program = int(raw_pg) if raw_pg is not None else 0
+                raw_ch = getattr(msg, "channel", None)
+                channel = int(raw_ch) if raw_ch is not None else 0
                 program_hist[program] = program_hist.get(program, 0) + 1
                 channel_hist[channel] = channel_hist.get(channel, 0) + 1
             elif msg_type == "note_on" and int(getattr(msg, "velocity", 0) or 0) > 0:
                 note_events += 1
-                channel = int(getattr(msg, "channel", 0) or 0)
+                raw_ch = getattr(msg, "channel", None)
+                channel = int(raw_ch) if raw_ch is not None else 0
                 channel_hist[channel] = channel_hist.get(channel, 0) + 1
                 note = getattr(msg, "note", None)
                 if isinstance(note, int):
@@ -530,7 +533,8 @@ class MidiEngine:
     @staticmethod
     def _resolve_message_role(msg: object, split_plan: TrackSplitPlan) -> str:
         """Resolve a message split key using channel mapping and fallback key."""
-        channel = int(getattr(msg, "channel", -1) or -1)
+        raw_ch = getattr(msg, "channel", None)
+        channel = int(raw_ch) if raw_ch is not None else -1
         channel_role_map = dict(split_plan.channel_role_map)
         mapped = channel_role_map.get(channel)
         if isinstance(mapped, str) and mapped:

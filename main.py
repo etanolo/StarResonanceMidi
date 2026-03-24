@@ -548,15 +548,13 @@ class AppController:
             self._show_message(self._tr("msg_track_split_disabled_no_channel"), "warning")
 
     def _target_labels_from_analysis(self, analysis: SplitAnalysisResult) -> dict[str, str]:
-        """Build key->label map from analyzer output for selected channel targets."""
-        selected = set(analysis.selected_targets)
+        """Build key->label map from analyzer output for all analyzed channels."""
         labels: dict[str, str] = {}
         for decision in analysis.decisions:
             key = f"ch:{decision.channel_1_based}"
-            if key in selected:
-                channel_text = self._tr("play_channel_short_label", decision.channel_1_based)
-                class_text = self._tr(f"play_class_{decision.split_class}")
-                labels[key] = f"{channel_text} · {class_text}"
+            channel_text = self._tr("play_channel_short_label", decision.channel_1_based)
+            class_text = self._tr(f"play_class_{decision.split_class}")
+            labels[key] = f"{channel_text} · {class_text}"
         return labels
 
     def _build_split_plan_for_path(self, midi_path: str) -> TrackSplitPlan:
@@ -582,13 +580,9 @@ class AppController:
             enabled_roles = current_keys
 
         channel_role_map: list[tuple[int, str]] = []
-        for key in current_keys:
-            if not key.startswith("ch:"):
-                continue
-            try:
-                channel = int(key.split(":", 1)[1]) - 1
-            except ValueError:
-                continue
+        for decision in analysis.decisions:
+            key = f"ch:{decision.channel_1_based}"
+            channel = decision.channel_1_based - 1
             if channel >= 0:
                 channel_role_map.append((channel, key))
 
