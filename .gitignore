@@ -1,3 +1,5 @@
+*.mid
+
 # OS
 .DS_Store
 __MACOSX/

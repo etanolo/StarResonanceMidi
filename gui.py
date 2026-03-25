@@ -83,6 +83,7 @@ class StarResonanceMidiGui:
         self.on_split_role_toggle: RoleToggleHandler | None = None
         self.on_hesitation_min_change: ValueChangeHandler | None = None
         self.on_hesitation_max_change: ValueChangeHandler | None = None
+        self.on_chord_threshold_change: ValueChangeHandler | None = None
         self.on_keybind_change: KeybindChangeHandler | None = None
 
         # Internal control refs used by update APIs.
@@ -612,6 +613,9 @@ class StarResonanceMidiGui:
         slider_hesitation_max = ft.Slider(min=0.01, max=0.12, value=0.05, divisions=110, label=None)
         slider_hesitation_max.on_change = lambda e: self.on_hesitation_max_change(float(e.control.value)) if self.on_hesitation_max_change and e.control.value is not None else None
 
+        slider_chord_threshold = ft.Slider(min=0.0, max=0.05, value=0.008, divisions=50, label=None)
+        slider_chord_threshold.on_change = lambda e: self.on_chord_threshold_change(float(e.control.value)) if self.on_chord_threshold_change and e.control.value is not None else None
+
         # Keybind dropdowns.
         keybind_options = [ft.dropdown.Option(label) for label in KEYBIND_MAP]
 
@@ -681,6 +685,8 @@ class StarResonanceMidiGui:
             self.create_slider_row(self.t("play_jitter"), self.t("play_jitter_desc"), slider_jitter),
             ft.Container(height=10),
             self.create_slider_row(self.t("play_stagger"), self.t("play_stagger_desc"), slider_stagger),
+            ft.Container(height=10),
+            self.create_slider_row(self.t("play_chord_threshold"), self.t("play_chord_threshold_desc"), slider_chord_threshold),
             ft.Container(height=10),
             ft.Text(self.t("play_hesitation"), size=14, weight=ft.FontWeight.BOLD),
             ft.Text(self.t("play_hesitation_desc"), size=12, color=ft.Colors.GREY_600),
