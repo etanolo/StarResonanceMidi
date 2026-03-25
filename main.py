@@ -78,6 +78,7 @@ class AppController:
         self.gui.on_split_role_toggle = self._handle_split_role_toggle
         self.gui.on_hesitation_min_change = self._handle_hesitation_min_change
         self.gui.on_hesitation_max_change = self._handle_hesitation_max_change
+        self.gui.on_chord_threshold_change = self._handle_chord_threshold_change
         self.gui.on_keybind_change = self._handle_keybind_change
         self.gui.set_play_mode(self.playback_mode)
         self.gui.set_split_enabled(self.split_enabled)
@@ -189,6 +190,10 @@ class AppController:
     def _handle_hesitation_max_change(self, value: float) -> None:
         """Propagate hesitation max from UI to engine."""
         self.engine.hesitation_max = max(0.0, value)
+
+    def _handle_chord_threshold_change(self, value: float) -> None:
+        """Propagate chord threshold from UI to engine."""
+        self.engine.chord_threshold = max(0.0, value)
 
     def _handle_keybind_change(self, action: str, display_label: str) -> None:
         """Propagate keybind change from UI to engine."""
