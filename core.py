@@ -4,6 +4,9 @@ This module contains low-level playback behavior, keyboard output mapping,
 and optional track/channel role analysis structures used by the controller.
 """
 
+from functools import lru_cache
+from typing import Union
+
 import mido
 import random
 import threading
@@ -20,6 +23,24 @@ OCTAVE_KEYS = [
     'a', '6', 's', '7', 'd', 'f', '8', 'g', '9', 'h', '0', 'j',
     'q', 'i', 'w', 'o', 'e', 'r', 'p', 't', '[', 'y', ']', 'u'
 ]
+
+KEYBIND_MAP: dict[str, str | Key] = {
+    "Ctrl": Key.ctrl_l,
+    "Shift": Key.shift_l,
+    "-": "-",
+    "=": "=",
+}
+
+# Abstract transition graph: action-based, independent of actual keybinds.
+_TRANSITION_GRAPH: dict[str, list[tuple[str, str]]] = {
+    "LOW":        [("up", "BASE"), ("shift", "LOW_SHIFT")],
+    "LOW_SHIFT":  [("up", "SHIFT"), ("shift", "LOW")],
+    "CTRL":       [("up", "HIGH_CTRL"), ("shift", "SHIFT"), ("ctrl", "BASE")],
+    "BASE":       [("up", "HIGH"), ("down", "LOW"), ("shift", "SHIFT"), ("ctrl", "CTRL")],
+    "SHIFT":      [("down", "LOW_SHIFT"), ("shift", "BASE"), ("ctrl", "CTRL")],
+    "HIGH_CTRL":  [("down", "CTRL"), ("ctrl", "HIGH")],
+    "HIGH":       [("down", "BASE"), ("ctrl", "HIGH_CTRL")],
+}
 
 PlayStateCallback = Callable[[bool], None]
 ProgressCallback = Callable[[float, float], None]
@@ -276,6 +297,7 @@ class MidiRoleAnalyzer:
         )
 
     @staticmethod
+    @lru_cache(maxsize=None)
     def _tokenize(name: str) -> set[str]:
         """Tokenize track name for lightweight keyword matching."""
         normalized = "".join(ch.lower() if ch.isalnum() else " " for ch in name)
@@ -303,8 +325,16 @@ class MidiEngine:
 
         # Key state machine.
         self.current_state = "BASE"
-        self.hesitation_min = 0.08
-        self.hesitation_max = 0.20
+        self.hesitation_min = 0.03
+        self.hesitation_max = 0.05
+
+        # Configurable keybinds: abstract action -> actual key.
+        self._action_keys: dict[str, Union[str, Key]] = {
+            "up": ".",
+            "down": ",",
+            "shift": Key.shift_l,
+            "ctrl": Key.ctrl_l,
+        }
 
         # Controller-facing callbacks.
         self.on_play_state_change: PlayStateCallback | None = None
@@ -351,25 +381,11 @@ class MidiEngine:
     def release_all_keys(self) -> None:
         """Release all potentially pressed keys and reset state."""
         self.keyboard.release(Key.space)
-        self.keyboard.release(Key.shift_l)
-        self.keyboard.release(Key.ctrl_l)
-        self.keyboard.release(',')
-        self.keyboard.release('.')
+        for k in self._action_keys.values():
+            self.keyboard.release(k)
 
         for k in OCTAVE_KEYS:
             self.keyboard.release(k)
-
-    def reset_state_to_base(self) -> None:
-        """Force octave/state toggles back to BASE after playback."""
-        if self.current_state == "SHIFT":
-            self.keyboard.tap(Key.shift_l)
-        elif self.current_state == "CTRL":
-            self.keyboard.tap(Key.ctrl_l)
-        elif self.current_state == "HIGH":
-            self.keyboard.tap(',')
-        elif self.current_state == "LOW":
-            self.keyboard.tap('.')
-        self.current_state = "BASE"
 
     def prime_sustain_pedal(self) -> None:
         """Enable toggle-style sustain pedal only when currently off."""
@@ -384,78 +400,96 @@ class MidiEngine:
         self.sustain_is_on = True
 
     # ----- State machine and note mapping -----
+    # State ranges: (min_note, max_note, offset)
+    _STATE_RANGES: dict[str, tuple[int, int, int]] = {
+        "LOW":        (21, 47, 12),  # A0 is lowest
+        "LOW_SHIFT":  (24, 59, 24),
+        "CTRL":       (36, 71, 36),
+        "BASE":       (48, 83, 48),
+        "SHIFT":      (60, 95, 60),
+        "HIGH_CTRL":  (72, 107, 72),
+        "HIGH":       (84, 108, 84),  # C8 is highest
+    }
+
+    def set_keybind(self, action: str, key: Union[str, Key]) -> None:
+        """Update one keybind by action name."""
+        if action in self._action_keys:
+            self._action_keys[action] = key
+
+    @classmethod
+    @lru_cache(maxsize=None)
+    def _bfs_actions(cls, source: str, target: str) -> tuple[str, ...]:
+        """Return shortest abstract-action sequence from source to target state."""
+        if source == target:
+            return ()
+        queue: list[tuple[str, list[str]]] = [(source, [])]
+        visited = {source}
+        while queue:
+            state, actions = queue.pop(0)
+            for action, nxt in _TRANSITION_GRAPH[state]:
+                new_actions = actions + [action]
+                if nxt == target:
+                    return tuple(new_actions)
+                if nxt not in visited:
+                    visited.add(nxt)
+                    queue.append((nxt, new_actions))
+        return ()
+
     def switch_state(self, target: str) -> None:
-        """Switch keyboard modifier state with brief humanized delays."""
+        """Switch keyboard state using shortest action sequence, mapping to actual keys."""
         if self.current_state == target:
             return
-
-        self.precise_sleep(random.uniform(self.hesitation_min, self.hesitation_max))
-
-        # 1) Release current state.
-        if self.current_state == "SHIFT":
-            self.keyboard.tap(Key.shift_l)
-        elif self.current_state == "CTRL":
-            self.keyboard.tap(Key.ctrl_l)
-        elif self.current_state == "HIGH":
-            self.keyboard.tap(',')
-        elif self.current_state == "LOW":
-            self.keyboard.tap('.')
-
-        self.precise_sleep(random.uniform(0.01, 0.03))
-        self.current_state = "BASE"
-
-        if target == "BASE":
-            return
-
-        # 2) Enter target state.
-        if target == "SHIFT":
-            self.keyboard.tap(Key.shift_l)
-        elif target == "CTRL":
-            self.keyboard.tap(Key.ctrl_l)
-        elif target == "HIGH":
-            self.keyboard.tap('.')
-        elif target == "LOW":
-            self.keyboard.tap(',')
-
+        for action in self._bfs_actions(self.current_state, target):
+            self.keyboard.tap(self._action_keys[action])
+            self.precise_sleep(random.uniform(self.hesitation_min, self.hesitation_max))
         self.current_state = target
-        self.precise_sleep(random.uniform(0.02, 0.06))
 
     def humanized_press(self, midi_note: int) -> None:
-        """Press mapped key for a MIDI note with variable hold time."""
-        target_state = "BASE"
-        offset = 48
+        """Press mapped key for a MIDI note, preferring current state or closest reachable."""
+        # If current state can handle this note, stay in it.
+        target_state: str | None = None
+        offset = 0
+        cur = self._STATE_RANGES.get(self.current_state)
+        if cur is not None:
+            lo, hi, off = cur
+            if lo <= midi_note <= hi and 0 <= midi_note - off < len(OCTAVE_KEYS):
+                target_state = self.current_state
+                offset = off
 
-        if 48 <= midi_note <= 83:
-            target_state = "BASE"
-            offset = 48
-        elif 60 <= midi_note <= 95:
-            target_state = "SHIFT"
-            offset = 60
-        elif 36 <= midi_note <= 71:
-            target_state = "CTRL"
-            offset = 36
-        elif 84 <= midi_note <= 108:
-            target_state = "HIGH"
-            offset = 84
-        elif 21 <= midi_note <= 47:
-            target_state = "LOW"
-            offset = 12
-        else:
+        # Otherwise pick the closest reachable state by BFS distance.
+        # Ties broken by preferring primary states over compound (LOW_SHIFT, HIGH_CTRL),
+        # this prevents states only switching between LOW_SHIFT (C1-C3) and SHIFT (C4-C6),
+        # because the bass and treble are typically distributed across these two non-overlapping regions, causing rapid switching.
+        if target_state is None:
+            best_dist = 999
+            best_compound = True
+            for state, (lo, hi, off) in self._STATE_RANGES.items():
+                if lo <= midi_note <= hi and 0 <= midi_note - off < len(OCTAVE_KEYS):
+                    is_compound = state in {"LOW_SHIFT", "HIGH_CTRL"}
+                    dist = len(self._bfs_actions(self.current_state, state))
+                    if dist < best_dist or (dist == best_dist and best_compound and not is_compound):
+                        best_dist = dist
+                        best_compound = is_compound
+                        target_state = state
+                        offset = off
+
+        if target_state is None:
             return
 
         # Dynamic hold time: shorter for high notes.
-        if midi_note > 72:
-            p_min, p_max = 0.02, 0.05
-        else:
-            p_min, p_max = 0.05, 0.10
+        # Not necessary when force prime sustain pedal
+        # if midi_note > 72:
+        #     p_min, p_max = 0.02, 0.05
+        # else:
+        #     p_min, p_max = 0.05, 0.10
 
         self.switch_state(target_state)
-        
+
         key_idx = midi_note - offset
         if 0 <= key_idx < len(OCTAVE_KEYS):
             key = OCTAVE_KEYS[key_idx]
             self.keyboard.press(key)
-            self.precise_sleep(random.uniform(p_min, p_max))
+            self.precise_sleep(random.uniform(self.hesitation_min, self.hesitation_max))
             self.keyboard.release(key)
 
     # ----- Playback lifecycle -----
@@ -521,7 +555,7 @@ class MidiEngine:
 
         finally:
             self.release_all_keys()
-            self.reset_state_to_base()
+            self.switch_state("BASE")
             self._emit_progress(total_duration, total_duration)
             self._safe_emit(self.on_play_state_change, False)
             self._safe_emit(self.on_finished)

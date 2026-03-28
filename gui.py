@@ -12,6 +12,7 @@ from typing import Any, Callable, Literal, cast
 import flet as ft
 
 from app_info import APP_NAME, APP_VERSION
+from core import KEYBIND_MAP
 
 FALLBACK_LOCALES: dict[str, dict[str, str]] = {"en": {}, "ja": {}, "zh": {}}
 
@@ -41,6 +42,7 @@ ModeChangeHandler = Callable[[str], None]
 BoolChangeHandler = Callable[[bool], None]
 RoleToggleHandler = Callable[[str, bool], None]
 TracksRemoveHandler = Callable[[list[str]], None]
+KeybindChangeHandler = Callable[[str, str], None]  # (action, display_label)
 StatusLevel = Literal["info", "warning", "error"]
 STATUS_COLOR_MAP: dict[StatusLevel, str] = {
     "info": ft.Colors.GREY_700,
@@ -79,6 +81,9 @@ class StarResonanceMidiGui:
         self.on_play_mode_change: ModeChangeHandler | None = None
         self.on_split_toggle: BoolChangeHandler | None = None
         self.on_split_role_toggle: RoleToggleHandler | None = None
+        self.on_hesitation_min_change: ValueChangeHandler | None = None
+        self.on_hesitation_max_change: ValueChangeHandler | None = None
+        self.on_keybind_change: KeybindChangeHandler | None = None
 
         # Internal control refs used by update APIs.
         self.btn_play: ft.FloatingActionButton | None = None
@@ -600,6 +605,29 @@ class StarResonanceMidiGui:
         slider_stagger = ft.Slider(min=0.0, max=0.1, value=0.025, divisions=50, label=None)
         slider_stagger.on_change = lambda e: self.on_stagger_change(float(e.control.value)) if self.on_stagger_change and e.control.value is not None else None
 
+        # Hesitation sliders.
+        slider_hesitation_min = ft.Slider(min=0.01, max=0.12, value=0.03, divisions=110, label=None)
+        slider_hesitation_min.on_change = lambda e: self.on_hesitation_min_change(float(e.control.value)) if self.on_hesitation_min_change and e.control.value is not None else None
+
+        slider_hesitation_max = ft.Slider(min=0.01, max=0.12, value=0.05, divisions=110, label=None)
+        slider_hesitation_max.on_change = lambda e: self.on_hesitation_max_change(float(e.control.value)) if self.on_hesitation_max_change and e.control.value is not None else None
+
+        # Keybind dropdowns.
+        keybind_options = [ft.dropdown.Option(label) for label in KEYBIND_MAP]
+
+        dd_key_ctrl = ft.Dropdown(
+            width=120,
+            options=list(keybind_options),
+            value="Ctrl",
+            on_select=lambda e: self.on_keybind_change("ctrl", e.control.value) if self.on_keybind_change and e.control.value else None,
+        )
+        dd_key_shift = ft.Dropdown(
+            width=120,
+            options=list(keybind_options),
+            value="Shift",
+            on_select=lambda e: self.on_keybind_change("shift", e.control.value) if self.on_keybind_change and e.control.value else None,
+        )
+
         # Connect play button to controller hook.
         self.btn_play = ft.FloatingActionButton(
             icon=ft.Icons.PLAY_ARROW,
@@ -653,6 +681,26 @@ class StarResonanceMidiGui:
             self.create_slider_row(self.t("play_jitter"), self.t("play_jitter_desc"), slider_jitter),
             ft.Container(height=10),
             self.create_slider_row(self.t("play_stagger"), self.t("play_stagger_desc"), slider_stagger),
+            ft.Container(height=10),
+            ft.Text(self.t("play_hesitation"), size=14, weight=ft.FontWeight.BOLD),
+            ft.Text(self.t("play_hesitation_desc"), size=12, color=ft.Colors.GREY_600),
+            ft.Divider(),
+            self.create_slider_row(self.t("play_hesitation_min"), self.t("play_hesitation_min_desc"), slider_hesitation_min),
+            ft.Container(height=10),
+            self.create_slider_row(self.t("play_hesitation_max"), self.t("play_hesitation_max_desc"), slider_hesitation_max),
+        ]
+
+        keybind_controls: list[ft.Control] = [
+            ft.Text(self.t("play_keybinds"), size=16, weight=ft.FontWeight.BOLD),
+            ft.Divider(),
+            ft.Row(
+                controls=[
+                    ft.Column([ft.Text(self.t("play_key_ctrl"), size=12), dd_key_ctrl], spacing=4),
+                    ft.Column([ft.Text(self.t("play_key_shift"), size=12), dd_key_shift], spacing=4),
+                ],
+                wrap=True,
+                spacing=16,
+            ),
         ]
 
         progress_panel = ft.Card(
@@ -720,6 +768,7 @@ class StarResonanceMidiGui:
                     )
                 ),
                 ft.Card(content=ft.Container(content=ft.Column(controls=tuning_controls), padding=20)),
+                ft.Card(content=ft.Container(content=ft.Column(controls=keybind_controls), padding=20)),
                 ft.Row(controls=[self.btn_prev, self.btn_play, self.btn_next], alignment=ft.MainAxisAlignment.CENTER, spacing=20)
             ], expand=True, spacing=20, scroll=ft.ScrollMode.AUTO
         )

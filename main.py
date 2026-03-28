@@ -14,7 +14,7 @@ import flet as ft
 from pynput.keyboard import Key as PynputKey
 from pynput.keyboard import Listener as KeyboardListener
 
-from core import MidiEngine, TrackSplitPlan
+from core import MidiEngine, TrackSplitPlan, KEYBIND_MAP
 from gui import StarResonanceMidiGui, StatusLevel
 from split_analyzer import SplitAnalysisResult, SplitAnalyzer
 
@@ -76,6 +76,9 @@ class AppController:
         self.gui.on_play_mode_change = self._handle_play_mode_change
         self.gui.on_split_toggle = self._handle_split_toggle
         self.gui.on_split_role_toggle = self._handle_split_role_toggle
+        self.gui.on_hesitation_min_change = self._handle_hesitation_min_change
+        self.gui.on_hesitation_max_change = self._handle_hesitation_max_change
+        self.gui.on_keybind_change = self._handle_keybind_change
         self.gui.set_play_mode(self.playback_mode)
         self.gui.set_split_enabled(self.split_enabled)
         self.gui.set_split_roles({}, set())
@@ -118,7 +121,7 @@ class AppController:
             return
 
         def on_press(key: Any) -> None:
-            if key == PynputKey.esc:
+            if key in (PynputKey.backspace, PynputKey.esc):
                 self._request_stop("msg_hotkey_stopped")
 
         try:
@@ -178,6 +181,21 @@ class AppController:
     def _handle_stagger_change(self, value: float) -> None:
         """Propagate stagger tuning from UI to engine."""
         self.engine.chord_stagger = max(0.0, value)
+
+    def _handle_hesitation_min_change(self, value: float) -> None:
+        """Propagate hesitation min from UI to engine."""
+        self.engine.hesitation_min = max(0.0, value)
+
+    def _handle_hesitation_max_change(self, value: float) -> None:
+        """Propagate hesitation max from UI to engine."""
+        self.engine.hesitation_max = max(0.0, value)
+
+    def _handle_keybind_change(self, action: str, display_label: str) -> None:
+        """Propagate keybind change from UI to engine."""
+        key_value = KEYBIND_MAP.get(display_label)
+        if key_value is None:
+            return
+        self.engine.set_keybind(action, key_value)
 
     def _handle_status_close(self, _: Any) -> None:
         """Handle manual close for persistent error status."""
